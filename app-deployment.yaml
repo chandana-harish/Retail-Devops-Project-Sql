@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capsule-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: capsule-app
+  template:
+    metadata:
+      labels:
+        app: capsule-app
+    spec:
+      containers:
+      - name: capsule-app
+        image: vasu_varshney_fordocker-app:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DB_HOST
+          value: "mysql-service"
+        - name: DB_USER
+          value: "root"
+        - name: DB_PASSWORD
+          value: "rootpassword"
+        - name: DB_NAME
+          value: "capsule_db"
+        - name: DB_PORT
+          value: "3306"
+        - name: PORT
+          value: "3000"
+        - name: NODE_ENV
+          value: "production"
+        - name: SESSION_SECRET
+          value: "capsule-k8s-secret-change-in-production"
+        - name: SESSION_MAX_AGE
+          value: "1800000"
+        - name: LOW_STOCK_THRESHOLD
+          value: "5"
+        - name: HIGH_STOCK_THRESHOLD
+          value: "15"
+        - name: EMAIL_SERVICE
+          value: "gmail"
+        - name: EMAIL_USER
+          value: "your-email@gmail.com"
+        - name: EMAIL_PASS
+          value: "your-gmail-app-password"
+        - name: SUPPORT_EMAIL
+          value: "support@capsule.com"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: capsule-service
+spec:
+  selector:
+    app: capsule-app
+  ports:
+  - port: 80
+    targetPort: 3000
+  type: LoadBalancer

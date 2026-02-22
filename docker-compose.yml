@@ -1,0 +1,53 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword123
+      MYSQL_DATABASE: capsule_db
+      MYSQL_USER: capsule_user
+      MYSQL_PASSWORD: secure_password_123
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DB_HOST: mysql
+      DB_USER: capsule_user
+      DB_PASSWORD: secure_password_123
+      DB_NAME: capsule_db
+      SESSION_SECRET: your-super-strong-random-session-key-change-this-in-production-64chars
+      EMAIL_SERVICE: gmail
+      EMAIL_USER: vasuvarshney2002@gmail.com
+      EMAIL_PASS: qbiu cyln rsyj czyh
+      SUPPORT_EMAIL: vasuvarshney2002@gmail.com
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: capsule_user
+      PMA_PASSWORD: secure_password_123
+    ports:
+      - "8081:80"
+    depends_on:
+      - mysql
+
+volumes:
+  mysql_data:

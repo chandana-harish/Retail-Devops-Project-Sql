@@ -1,0 +1,373 @@
+---
+# ============================================================================
+# CAPSULE PROJECT - ANSIBLE DEPLOYMENT PLAYBOOK
+# ============================================================================
+# Main playbook for deploying the capsule project to Kubernetes
+# Handles Docker image building, pushing, and Kubernetes deployment
+
+- name: Deploy Capsule Project to Kubernetes
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  vars:
+    # Project Configuration
+    project_name: "capsule-project"
+    app_name: "capsule-app"
+    namespace: "default"
+    
+    # Docker Configuration
+    docker_image_name: "vasu_varshney_fordocker-app"
+    docker_registry: "docker.io"
+    docker_tag: "{{ ansible_date_time.epoch }}"
+    docker_latest_tag: "latest"
+    
+    # Database Configuration
+    mysql_root_password: "rootpassword"
+    mysql_database: "capsule_db"
+    mysql_user: "capsule_user"
+    mysql_password: "capsule_password"
+    
+    # Application Configuration
+    app_port: 3000
+    mysql_port: 3306
+    session_timeout: 3600000
+    replicas: 1
+    
+    # Environment Variables
+    app_env_vars:
+      DB_HOST: "mysql-service"
+      DB_USER: "root"
+      DB_PASSWORD: "{{ mysql_root_password }}"
+      DB_NAME: "{{ mysql_database }}"
+      DB_PORT: "{{ mysql_port }}"
+      PORT: "{{ app_port }}"
+      NODE_ENV: "production"
+      SESSION_SECRET: "capsule-ansible-secret-{{ ansible_date_time.epoch }}"
+      SESSION_MAX_AGE: "{{ session_timeout }}"
+      LOW_STOCK_THRESHOLD: "5"
+      HIGH_STOCK_THRESHOLD: "15"
+      EMAIL_SERVICE: "gmail"
+      EMAIL_USER: "your-email@gmail.com"
+      EMAIL_PASS: "your-gmail-app-password"
+      SUPPORT_EMAIL: "support@capsule.com"
+
+  tasks:
+    - name: 📋 Display deployment information
+      debug:
+        msg:
+          - "=========================================="
+          - "🚀 CAPSULE PROJECT DEPLOYMENT STARTING"
+          - "=========================================="
+          - "Project: {{ project_name }}"
+          - "App Name: {{ app_name }}"
+          - "Docker Image: {{ docker_image_name }}:{{ docker_tag }}"
+          - "Namespace: {{ namespace }}"
+          - "Timestamp: {{ ansible_date_time.iso8601 }}"
+          - "=========================================="
+
+    - name: ✅ Verify prerequisites
+      block:
+        - name: Check if Docker is installed
+          command: docker --version
+          register: docker_version
+          changed_when: false
+
+        - name: Check if kubectl is installed
+          command: kubectl version --client
+          register: kubectl_version
+          changed_when: false
+
+        - name: Display tool versions
+          debug:
+            msg:
+              - "🐳 {{ docker_version.stdout }}"
+              - "☸️  {{ kubectl_version.stdout }}"
+
+    - name: 🔧 Prepare build environment
+      block:
+        - name: Ensure project directory exists
+          file:
+            path: "./Vasu_Varshney_fordocker"
+            state: directory
+
+        - name: Check for required files
+          stat:
+            path: "./Vasu_Varshney_fordocker/{{ item }}"
+          register: file_check
+          loop:
+            - "Dockerfile"
+            - "package.json"
+            - "server.js"
+            - "app-deployment.yaml"
+            - "mysql-deployment.yaml"
+
+        - name: Verify all required files exist
+          fail:
+            msg: "❌ Required file {{ item.item }} not found!"
+          when: not item.stat.exists
+          loop: "{{ file_check.results }}"
+
+    - name: 🐳 Build and manage Docker image
+      block:
+        - name: Build Docker image
+          docker_image:
+            name: "{{ docker_image_name }}"
+            tag: "{{ docker_tag }}"
+            build:
+              path: "./Vasu_Varshney_fordocker"
+              dockerfile: "Dockerfile"
+              pull: yes
+            source: build
+            force_tag: yes
+          register: build_result
+
+        - name: Tag image as latest
+          docker_image:
+            name: "{{ docker_image_name }}"
+            repository: "{{ docker_image_name }}"
+            tag: "latest"
+            source: local
+            force_tag: yes
+
+        - name: Display build result
+          debug:
+            msg:
+              - "✅ Docker image built successfully!"
+              - "📦 Image: {{ docker_image_name }}:{{ docker_tag }}"
+              - "🏷️  Also tagged as: {{ docker_image_name }}:latest"
+
+    - name: 📤 Push to Docker registry (optional)
+      block:
+        - name: Push versioned image to registry
+          docker_image:
+            name: "{{ docker_image_name }}"
+            tag: "{{ docker_tag }}"
+            push: yes
+            repository: "{{ docker_registry }}/{{ docker_image_name }}"
+          when: push_to_registry | default(false)
+
+        - name: Push latest image to registry
+          docker_image:
+            name: "{{ docker_image_name }}"
+            tag: "latest"
+            push: yes
+            repository: "{{ docker_registry }}/{{ docker_image_name }}"
+          when: push_to_registry | default(false)
+
+      rescue:
+        - name: Handle registry push failure
+          debug:
+            msg:
+              - "⚠️  Registry push failed or skipped"
+              - "💡 To enable registry push, run with: -e push_to_registry=true"
+
+    - name: ☸️ Deploy to Kubernetes
+      block:
+        - name: Create namespace if it doesn't exist
+          k8s:
+            name: "{{ namespace }}"
+            api_version: v1
+            kind: Namespace
+            state: present
+
+        - name: Deploy MySQL database
+          k8s:
+            state: present
+            definition:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: mysql
+                namespace: "{{ namespace }}"
+              spec:
+                replicas: 1
+                selector:
+                  matchLabels:
+                    app: mysql
+                template:
+                  metadata:
+                    labels:
+                      app: mysql
+                  spec:
+                    containers:
+                    - name: mysql
+                      image: mysql:8.0
+                      ports:
+                      - containerPort: "{{ mysql_port }}"
+                      env:
+                      - name: MYSQL_ROOT_PASSWORD
+                        value: "{{ mysql_root_password }}"
+                      - name: MYSQL_DATABASE
+                        value: "{{ mysql_database }}"
+                      - name: MYSQL_USER
+                        value: "{{ mysql_user }}"
+                      - name: MYSQL_PASSWORD
+                        value: "{{ mysql_password }}"
+                      volumeMounts:
+                      - name: mysql-storage
+                        mountPath: /var/lib/mysql
+                    volumes:
+                    - name: mysql-storage
+                      emptyDir: {}
+
+        - name: Deploy MySQL service
+          k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: mysql-service
+                namespace: "{{ namespace }}"
+              spec:
+                selector:
+                  app: mysql
+                ports:
+                - port: "{{ mysql_port }}"
+                  targetPort: "{{ mysql_port }}"
+                type: ClusterIP
+
+        - name: Wait for MySQL to be ready
+          k8s_info:
+            api_version: apps/v1
+            kind: Deployment
+            name: mysql
+            namespace: "{{ namespace }}"
+            wait: true
+            condition:
+              type: Available
+              status: "True"
+            wait_timeout: 300
+
+        - name: Deploy Capsule application
+          k8s:
+            state: present
+            definition:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: "{{ app_name }}"
+                namespace: "{{ namespace }}"
+              spec:
+                replicas: "{{ replicas }}"
+                selector:
+                  matchLabels:
+                    app: "{{ app_name }}"
+                template:
+                  metadata:
+                    labels:
+                      app: "{{ app_name }}"
+                  spec:
+                    containers:
+                    - name: "{{ app_name }}"
+                      image: "{{ docker_image_name }}:{{ docker_latest_tag }}"
+                      ports:
+                      - containerPort: "{{ app_port }}"
+                      env:
+                      - name: DB_HOST
+                        value: "mysql-service"
+                      - name: DB_USER
+                        value: "root"
+                      - name: DB_PASSWORD
+                        value: "{{ mysql_root_password }}"
+                      - name: DB_NAME
+                        value: "{{ mysql_database }}"
+                      - name: DB_PORT
+                        value: "{{ mysql_port }}"
+                      - name: PORT
+                        value: "{{ app_port }}"
+                      - name: NODE_ENV
+                        value: "production"
+                      - name: SESSION_SECRET
+                        value: "capsule-ansible-secret-{{ ansible_date_time.epoch }}"
+                      - name: SESSION_MAX_AGE
+                        value: "{{ session_timeout }}"
+                      - name: LOW_STOCK_THRESHOLD
+                        value: "5"
+                      - name: HIGH_STOCK_THRESHOLD
+                        value: "15"
+                      - name: EMAIL_SERVICE
+                        value: "gmail"
+                      - name: EMAIL_USER
+                        value: "your-email@gmail.com"
+                      - name: EMAIL_PASS
+                        value: "your-gmail-app-password"
+                      - name: SUPPORT_EMAIL
+                        value: "support@capsule.com"
+
+        - name: Deploy Capsule service
+          k8s:
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: capsule-service
+                namespace: "{{ namespace }}"
+              spec:
+                selector:
+                  app: "{{ app_name }}"
+                ports:
+                - port: 80
+                  targetPort: "{{ app_port }}"
+                type: LoadBalancer
+                sessionAffinity: ClientIP
+                sessionAffinityConfig:
+                  clientIP:
+                    timeoutSeconds: 10800
+
+        - name: Wait for application to be ready
+          k8s_info:
+            api_version: apps/v1
+            kind: Deployment
+            name: "{{ app_name }}"
+            namespace: "{{ namespace }}"
+            wait: true
+            condition:
+              type: Available
+              status: "True"
+            wait_timeout: 300
+
+    - name: 📊 Deployment verification
+      block:
+        - name: Get deployment status
+          k8s_info:
+            api_version: apps/v1
+            kind: Deployment
+            namespace: "{{ namespace }}"
+          register: deployments
+
+        - name: Get service status
+          k8s_info:
+            api_version: v1
+            kind: Service
+            namespace: "{{ namespace }}"
+          register: services
+
+        - name: Get pod status
+          k8s_info:
+            api_version: v1
+            kind: Pod
+            namespace: "{{ namespace }}"
+            label_selectors:
+              - app={{ app_name }}
+          register: pods
+
+        - name: Display deployment results
+          debug:
+            msg:
+              - "=========================================="
+              - "🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!"
+              - "=========================================="
+              - "✅ Deployments: {{ deployments.resources | length }} created"
+              - "✅ Services: {{ services.resources | length }} created"
+              - "✅ Pods: {{ pods.resources | length }} running"
+              - "=========================================="
+              - "🌐 Access your application via LoadBalancer IP"
+              - "📝 Check service status with: kubectl get svc -n {{ namespace }}"
+              - "=========================================="
+
+  handlers:
+    - name: Cleanup on failure
+      debug:
+        msg: "🧹 Cleaning up resources after failure..."
