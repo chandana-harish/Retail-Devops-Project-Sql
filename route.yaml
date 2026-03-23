@@ -10,7 +10,7 @@ spec:
     - matches:
       - path:
           type: PathPrefix
-          value: /
+          value: /retail
       filters:
         - type: URLRewrite
           urlRewrite:
