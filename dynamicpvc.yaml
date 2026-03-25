@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: retail-pvc
+  name: chandana-pvc
   namespace: chandana-ns
 spec:
   resources:
