@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: 
+  name: chandana-pvc 
+  namespace: chandana-ns #namespace is requied in pvc not reqiired in pv its cluster scops
+spec: 
+  accessModes: 
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
