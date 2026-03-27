@@ -10,3 +10,5 @@ spec:
   accessModes:
     - ReadWriteMany
   storageClassName: nfs-sc
+   
+

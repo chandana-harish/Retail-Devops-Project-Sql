@@ -2,9 +2,12 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: nfs-sc
-provisioner: cluster.local/nfs-subdir-external-provisioner
+provisioner: nfs.csi.k8s.io
 parameters:
   server: 10.0.8.33
-  path: /var/nfs/general/dynamic
-  readOnly: "false"
+  share: /exported/path
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
  
+
+
